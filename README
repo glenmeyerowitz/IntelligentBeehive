@@ -1,0 +1,16 @@
+This code is meant to run on the Arduino Yun. It will incorporate data acquired from
+  * RHT03 sensor (relative humidity and temperature sensor)
+  * SparkFun Electret Microphone
+
+Prepare your SD card with an empty folder in the SD root named "arduino" and a subfolder of that named "www". This will ensure that the Yún will create a link to the SD to the "/mnt/sd" path.
+
+In this sketch folder is a basic webpage and a copy of zepto.js, a minimized version of jQuery.  
+
+When you upload your sketch, these files will be placed in the /arduino/www/TemperatureWebPanel folder on your SD card.
+
+You can then go to http://arduino.local/sd/IntelligentBeehive to see the output of this sketch.
+
+Feb 27, 2014
+Glen Meyerowitz
+ 
+This code is in the public domain and part of Yale Bee Space intelligent beehive project. 

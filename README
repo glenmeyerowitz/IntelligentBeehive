@@ -1,16 +1,17 @@
 This code is meant to run on the Arduino Yun. It will incorporate data acquired from
   * RHT03 sensor (relative humidity and temperature sensor)
   * SparkFun Electret Microphone
+  * Walgreens Digital Glass Scale (connections instructions in other document)
 
-Prepare your SD card with an empty folder in the SD root named "arduino" and a subfolder of that named "www". This will ensure that the Yún will create a link to the SD to the "/mnt/sd" path.
+This sketch will make use of the Temboo library to append data to a Google Spreadsheet. 
 
-In this sketch folder is a basic webpage and a copy of zepto.js, a minimized version of jQuery.  
+With a Google account, and a spreadsheet, you can constantly be uploading data in real time. The columns in the spreadsheet must be labeled. The labels do not matter. 
 
-When you upload your sketch, these files will be placed in the /arduino/www/TemperatureWebPanel folder on your SD card.
+You will also need a Temboo account and can update your Temboo account information in the accompanying TembooAccount.h file. For more information about how to do this, visit https://www.temboo.com/arduino/update-google-spreadsheet.
 
-You can then go to http://arduino.local/sd/IntelligentBeehive to see the output of this sketch.
+The current code has been calibrated and works with a Walgreens Digital Glass Scale. A full document on how to connect the scale to the Arduino can be found online at http://github.com/glenmeyerowitz/readScale. The scale will need to be calibrated before use. Calibration instructions are also online. 
 
-Feb 27, 2014
+March 17, 2014
 Glen Meyerowitz
- 
+
 This code is in the public domain and part of Yale Bee Space intelligent beehive project. 

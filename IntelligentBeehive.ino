@@ -1,48 +1,63 @@
 /*
   This code is meant to run on the Arduino Yun. It will incorporate data acquired from
-  * RHT03 sensor (relative humidity and temperature sensor)
-  * SparkFun Electret Microphone
+    * RHT03 sensor (relative humidity and temperature sensor)
+    * SparkFun Electret Microphone
+    * Walgreens Digital Glass Scale (connections instructions in other document)
 
-  Prepare your SD card with an empty folder in the SD root named "arduino" and a subfolder of that named "www". 
-  This will ensure that the Yún will create a link to the SD to the "/mnt/sd" path.
+  This sketch will make use of the Temboo library to append data to a Google Spreadsheet. 
 
-  In this sketch folder is a basic webpage and a copy of zepto.js, a minimized version of jQuery.  
-  When you upload your sketch, these files will be placed in the /arduino/www/TemperatureWebPanel folder on your SD card.
+  With a Google account, and a spreadsheet, you can constantly be uploading data in real 
+  time. The columns in the spreadsheet must be labeled. The labels do not matter. 
 
-  You can then go to http://arduino.local/sd/IntelligentBeehive to see the output of this sketch.
+  You will also need a Temboo account and can update your Temboo account information in 
+  the accompanying TembooAccount.h file. For more information about how to do this, visit 
+  https://www.temboo.com/arduino/update-google-spreadsheet.
 
-  Feb 27, 2014
+  The current code has been calibrated and works with a Walgreens Digital Glass Scale. A 
+  full document on how to connect the scale to the Arduino can be found online at 
+  http://github.com/glenmeyerowitz/readScale. The scale will need to be calibrated before 
+  use. Calibration instructions are also online. 
+
+  March 17, 2014
   Glen Meyerowitz
- 
+
   This code is in the public domain and part of Yale Bee Space intelligent beehive project. 
 */
+
 #include <Bridge.h>
-#include <YunServer.h>
-#include <YunClient.h>
 #include <dht.h>
+#include <Temboo.h>
+#include "TembooAccount.h"
 
-// Listen on default port 5555, the webserver on the Yun will forward there all the HTTP requests for us.
-YunServer server;
+double readScale();        // returns double that is equal to the weight of the objecto on the scale
+int readMic();             // returns int that is equal to the analog value of the microphone signal
+dht readRHT(int thisPin);  // returns DHT object that contains information about temperature and humidity 
+
+const String GOOGLE_USERNAME = "your-google-username";
+const String GOOGLE_PASSWORD = "your-google-password";
+const String SPREADSHEET_TITLE = "your-spreadsheet-title";
 String startString;
-long hits = 0;
-dht DHT;
-
-int RHT1_Pin = 2;
-int RHT2_Pin = 3;
-int mic_Pin = A0;
+int scalePowerPin = 2;  // scale control signal from digital pin 2
+int tempPowerPin = 3;   // power for the RHT sensors from pin 3
+int rht1Pin = 4;        // first RHT sensor connected to digital pin 4
+int rht2Pin = 5;        // second RHT sensor connected to digital pin 5
+int micPin = A0;        // microphone connected to analog pin 0 
+int scalePin = A1;      // scale connected to analog pin 1
 
 void setup() {
   Serial.begin(9600);
 
-  // Bridge startup
-  pinMode(13,OUTPUT);
-  digitalWrite(13, LOW);
+  // bridge startup
+  Serial.print("Initializing the bridge...");
   Bridge.begin();
-  digitalWrite(13, HIGH);
+  Serial.println("Done");
 
-  // Listen for incoming connection only from localhost (no one from the external network could connect)
-  server.listenOnLocalhost();
-  server.begin();
+  pinMode(scalePowerPin, OUTPUT);
+  pinMode(tempPowerPin, OUTPUT);
+  pinMode(rht1Pin, INPUT);
+  pinMode(rht2Pin, INPUT);
+  pinMode(micPin, INPUT);
+  pinMode(scalePin, INPUT);
 
   // get the time that this sketch started:
   Process startTime;
@@ -54,51 +69,94 @@ void setup() {
 }
 
 void loop() {
-  // Get clients coming from server
-  YunClient client = server.accept();
+  // turn on pin for RHT power
+  digitalWrite(tempPowerPin, HIGH);
 
-  // There is a new client?
-  if (client) {
-    // read the command
-    String command = client.readString();
-    command.trim();        //kill whitespace
-    Serial.println(command);
-    // is "data" command?
-    if (command == "data") {
+  // initialize varialbles for the process
+  double weight = 0;
+  int soundLevel = 0;
+  dht DHT;
 
-      // get the time from the server:
-      Process time;
-      time.runShellCommand("date");
-      String timeString = "";
-      while(time.available()) {
-        char c = time.read();
-        timeString += c;
-      }
-      Serial.println(timeString);
-      int soundLevel = analogRead(mic_Pin);
-      client.print("Current time on the Yun: ");
-      client.println(timeString);
-      client.print("RHT sensor 1: \t");
-      readRHT(RHT1_Pin, client);
-      client.print("RHT sensor 2: \t");
-      readRHT(RHT2_Pin, client);
-      client.print("<br>Current sound level: ");
-      client.print(soundLevel);
-      client.print("<br>Hits so far: ");
-      client.print(hits);
+  Serial.println("Getting sensor value...");
+
+  // get the current time from the server:
+  Process time;
+  time.runShellCommand("date");
+  String timeString = "";
+  while(time.available()) {
+    char c = time.read();
+    timeString += c;
+  }
+ 
+  String rowData(timeString);
+  rowData += ",";
+      
+  DHT = readRHT(rht1Pin);
+  rowData += DHT.humidity;
+  rowData += ",";
+  rowData += DHT.temperature;
+  rowData += ",";
+
+  DHT = readRHT(rht2Pin);
+  rowData += DHT.humidity;
+  rowData += ",";
+  rowData += DHT.temperature;
+  rowData += ",";
+
+  soundLevel = analogRead(micPin);
+  rowData += soundLevel;
+  rowData += ",";
+
+  weight = readScale();
+  rowData += weight;
+
+  Serial.println(rowData);
+
+  // initialize Temboo objects and variables
+  TembooChoreo AppendRowChoreo;
+
+  AppendRowChoreo.begin();
+
+  AppendRowChoreo.setAccountName(TEMBOO_ACCOUNT);
+  AppendRowChoreo.setAppKeyName(TEMBOO_APP_KEY_NAME);
+  AppendRowChoreo.setAppKey(TEMBOO_APP_KEY);
+
+  AppendRowChoreo.setChoreo("/Library/Google/Spreadsheets/AppendRow");
+
+  AppendRowChoreo.addInput("Username", GOOGLE_USERNAME);
+  AppendRowChoreo.addInput("Password", GOOGLE_PASSWORD);
+
+  AppendRowChoreo.addInput("SpreadsheetTitle", SPREADSHEET_TITLE);
+
+  AppendRowChoreo.addInput("RowData", rowData);
+
+  // run the Choreo and wait for the results
+  // the return code (returnCode) will indicate success or failure
+  unsigned int returnCode = AppendRowChoreo.run();
+
+  // return code of zero (0) means success
+  if (returnCode == 0) {
+    Serial.println("Success! Appended " + rowData);
+    Serial.println("");
+  } else {
+    // return code of anything other than zero means failure
+    // read and display any error messages
+    while (AppendRowChoreo.available()) {
+      char c = AppendRowChoreo.read();
+      Serial.print(c);
     }
-
-    // Close connection and free resources.
-    client.stop();
-    hits++;
   }
 
-  delay(100);  // this will check every 0.1s
+  AppendRowChoreo.close();
+
+  delay(1000*60*15);  // this will check every 15 minutes
 }
 
-void readRHT(int thisPin, YunClient client){
-  // Read in data from RHT03 sensor
-  int chk = DHT.read21(thisPin);
+dht readRHT(int rhtPin){
+  // read in data from RHT03 sensor
+  dht DHT;
+  int chk = DHT.read21(rhtPin);
+
   switch (chk)
   {
     case DHTLIB_OK:  
@@ -114,10 +172,38 @@ void readRHT(int thisPin, YunClient client){
 		Serial.print("Unknown error,\t"); 
 		break;
   }
-  // Print data to the client
-  client.print("Current humidity:");
-  client.print(DHT.humidity, 1);
-  client.print("\tCurrent temperature:");
-  client.print(DHT.temperature, 1);
+
+  return DHT;
 }
 
+double readScale(){
+  double scaleValue = 0;       // the analog signal from the pin
+  double weight = 0;           // stores the weight of the scale
+  int iter = 75;               // number of iterations
+  analogReference(EXTERNAL);   // use the AREF pin as a voltage reference. AREF should be shorted to 3.3V
+
+  // turn scale on before data collection
+  digitalWrite(scalePowerPin, HIGH);
+  delay(1000);
+  
+  // average lots of readings together to get a stable value
+  for(int i=1; i<=iter; i++){
+      scaleValue += analogRead(scalePin);
+      scaleValue -= 545.25;    // this value is used in calabrating the scale to find what analog signal is zero pounds
+      delay(15);
+  }
+
+  // change the following code to calibrate the scale
+  scaleValue = scaleValue / iter;
+  weight = 0.001*scaleValue*scaleValue + 4.5899*scaleValue + 0.0007;
+
+  // turn scale off after data collection
+  digitalWrite(scalePowerPin, LOW);
+
+  return weight;
+}
+
+int readMic(){
+      int soundLevel = analogRead(micPin);
+      return soundLevel;
+}
